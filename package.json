@@ -1,0 +1,13 @@
+{
+  "name": "jp.logicalbeat.lb-boneanimationtexture",
+  "displayName": "LB-BoneAnimationTexture",
+  "description": "Bone Animation Texture",
+  "version": "0.9.0",
+  "unity": "2021.3",
+  "documentationUrl": "http://robin:8080/gitbucket/sec_DC/LB-BoneAnimationTexture/wiki",
+  "licensesUrl": "",
+  "author": {
+    "name": "logicalbeat Co., Ltd." 
+  },
+  "category": "LB-Library"
+}
