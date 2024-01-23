@@ -22,14 +22,30 @@ namespace logicalbeat
 		public Matrix4x4	bindPose;
 
 		// ワールドマトリクス取得
-		public Matrix4x4	GetWorldMatrix( in BATBoneData[] datas )
+		public Matrix4x4	GetWorldMatrix( in BATBoneData[] datas, bool bSSC )
 		{
 			// 親を遡ってマトリクス計算
 			var	data = this;
 			var	mtx  = Matrix4x4.identity;
 			while ( true )
 			{
-				var	localMtx = Matrix4x4.TRS( data.localPosition, data.localRotation, data.localScale );
+				// ローカルマトリクスを作成
+				Matrix4x4	localMtx;
+				if ( bSSC && ( data.parentIndex >= 0 ) )
+				{
+					// SSC考慮
+					localMtx  = Matrix4x4.Translate( data.localPosition );
+					localMtx *= Matrix4x4.Scale( new Vector3( 1.0f / datas[data.parentIndex].localScale.x, 1.0f / datas[data.parentIndex].localScale.y, 1.0f / datas[data.parentIndex].localScale.z ) );
+					localMtx *= Matrix4x4.Rotate( data.localRotation );
+					localMtx *= Matrix4x4.Scale( data.localScale );
+				}
+				else
+				{
+					// SSC無し
+					localMtx = Matrix4x4.TRS( data.localPosition, data.localRotation, data.localScale );
+				}
+
+				// 親子構成
 				mtx = localMtx * mtx;
 				if ( data.parentIndex < 0 ) break;
 				data = datas[data.parentIndex];

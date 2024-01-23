@@ -20,6 +20,8 @@ Shader "logicalbeat/BATTest"
 			#pragma multi_compile_instancing
 
 			#include "UnityCG.cginc"
+			#include "UnityLightingCommon.cginc"
+
 			#include "BAT_Functions.cginc"
 
 			#define	ENABLE_INSTANCING_RANDOM_TEST		(0)		// インスタンシングごとにランダム処理するテスト
@@ -89,6 +91,11 @@ Shader "logicalbeat/BATTest"
 				// sample the texture
 				fixed4 col = tex2D(_MainTex, i.uv);
 				col *= _BaseColor;
+
+				// 簡易ライティング(テストとして)
+				float	rate = max( dot( normalize( i.normal.xyz ), normalize( float3( _WorldSpaceLightPos0.xyz ) ) ), 0 );
+				col.xyz *= _LightColor0.xyz * rate;
+
 				// apply fog
 				UNITY_APPLY_FOG(i.fogCoord, col);
 				return col;

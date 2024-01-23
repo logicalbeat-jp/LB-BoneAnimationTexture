@@ -146,7 +146,8 @@ namespace logicalbeat
 			var	mtxTmps = new List<Matrix4x4>();
 
 			// 全て検査
-			for (int h = 0;h < searchIndex;++h)
+			int	num = ( searchIndex > 0 ) ? searchIndex : instanceMax;
+			for (int h = 0;h < num;++h)
 			{
 				// 利用していない or 非表示なら次
 				if ( !useFlags[h] || !visibleFlags[h] ) continue;

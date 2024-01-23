@@ -14,7 +14,9 @@ namespace logicalbeat
 	{
 		public string		bindPath;			// バインドパス名群
 		public float[]		times;				// キーの時刻
+		public Vector3[]	localPositions;		// ローカル座標群
 		public Quaternion[]	localRotations;		// ローカル回転群
+		public Vector3[]	localScales;		// ローカルスケール群
 
 		// 時刻インデックスを取得
 		private void	GetTimeIndex( out int index, out float rate, float time, float timeLength )
@@ -37,17 +39,68 @@ namespace logicalbeat
 			rate  = 0.0f;
 		}
 
-		// 時刻からローカル回転を取得
-		public Quaternion	GetLocalRotation( float time, float timeLength )
+		// ローカルVector3取得
+		private void	GetLocalVector3( ref Vector3 result, Vector3[] vectors, float time, float timeLength )
 		{
+			// 取得できない時は戻る
+			if ( false
+				|| ( vectors == null )
+				|| ( vectors.Length <= 0 )
+			) return;
+
+			// もし単一の時はそれをそのまま使う
+			if ( vectors.Length == 1 )
+			{
+				result = vectors[0];
+				return;
+			}
+
 			// インデックスを取得
 			int		index;
 			float	rate;
 			GetTimeIndex( out index, out rate, time, timeLength );
 
 			// 補間処理を行う
-			var	q = Quaternion.Slerp( localRotations[index+0], localRotations[index+1], rate );
-			return	( q );
+			result = Vector3.Lerp( vectors[index+0], vectors[index+1], rate );
+		}
+
+		// 時刻からローカル座標を取得
+		public void	GetLocalPosition( ref Vector3 position, float time, float timeLength )
+		{
+			// 別関数で処理
+			GetLocalVector3( ref position, localPositions, time, timeLength );
+		}
+
+		// 時刻からローカル回転を取得
+		public void	GetLocalRotation( ref Quaternion rotation, float time, float timeLength )
+		{
+			// 取得できない時は戻る
+			if ( false
+				|| ( localRotations == null )
+				|| ( localRotations.Length <= 0 )
+			) return;
+
+			// もし単一の時はそれをそのまま使う
+			if ( localRotations.Length == 1 )
+			{
+				rotation = localRotations[0];
+				return;
+			}
+
+			// インデックスを取得
+			int		index;
+			float	rate;
+			GetTimeIndex( out index, out rate, time, timeLength );
+
+			// 補間処理を行う
+			rotation = Quaternion.Slerp( localRotations[index+0], localRotations[index+1], rate );
+		}
+
+		// 時刻からローカルスケールを取得
+		public void	GetLocalScale( ref Vector3 scale, float time, float timeLength )
+		{
+			// 別関数で処理
+			GetLocalVector3( ref scale, localScales, time, timeLength );
 		}
 	}
 
@@ -55,6 +108,7 @@ namespace logicalbeat
 	{
 		[SerializeField]	private float			frameRate;		// フレームレート
 		[SerializeField]	private float			timeLength;		// アニメーション時間長
+		[SerializeField]	private bool			enabledSSC;		// SSCが有効か？
 		[SerializeField]	private BATCurveData[]	curveDatas;		// カーブデータ
 
 		// フレームレート獲得
@@ -106,7 +160,7 @@ namespace logicalbeat
 
 				// テクスチャのガワを作成
 				tex = new Texture2D( keyNum, modelData.GetBoneIndexNum() * 3, TextureFormat.RGBAHalf, false, true );
-//			tex = new Texture2D( keyNum, modelData.GetBoneIndexNum() * 3, TextureFormat.RGBAFloat, false, true );
+//				tex = new Texture2D( keyNum, modelData.GetBoneIndexNum() * 3, TextureFormat.RGBAFloat, false, true );
 
 				// ピクセル確保
 				var	pixels = new Color[tex.width*tex.height];
@@ -130,7 +184,9 @@ namespace logicalbeat
 					for (int h = 0;h < curveIndex.Length;++h)
 					{
 						if ( curveIndex[h] < 0 ) continue;
-						boneDatas[h].localRotation = curveDatas[curveIndex[h]].GetLocalRotation( time, timeLength );
+						curveDatas[curveIndex[h]].GetLocalPosition( ref boneDatas[h].localPosition, time, timeLength );
+						curveDatas[curveIndex[h]].GetLocalRotation( ref boneDatas[h].localRotation, time, timeLength );
+						curveDatas[curveIndex[h]].GetLocalScale( ref boneDatas[h].localScale, time, timeLength );
 					}
 
 					// 骨ごとにカラーを設定
@@ -140,7 +196,7 @@ namespace logicalbeat
 						if ( boneDatas[h].boneIndex < 0 ) continue;
 
 						// マトリクス取得
-						var	wmtx = boneDatas[h].GetWorldMatrix( boneDatas );
+						var	wmtx = boneDatas[h].GetWorldMatrix( boneDatas, enabledSSC );
 						var	mtx  = wmtx * boneDatas[h].bindPose;
 
 						// ピクセルを作る
@@ -197,12 +253,18 @@ namespace logicalbeat
 				// バインド取得
 				var	binding = bindings[h];
 
-				// 回転じゃない時は戻る
+				// 座標 or 回転 or スケールじゃない時は戻る
 				if ( true
+					&& ( binding.propertyName != "m_LocalPosition.x" )
+					&& ( binding.propertyName != "m_LocalPosition.y" )
+					&& ( binding.propertyName != "m_LocalPosition.z" )
 					&& ( binding.propertyName != "m_LocalRotation.x" )
 					&& ( binding.propertyName != "m_LocalRotation.y" )
 					&& ( binding.propertyName != "m_LocalRotation.z" )
 					&& ( binding.propertyName != "m_LocalRotation.w" )
+					&& ( binding.propertyName != "m_LocalScale.x" )
+					&& ( binding.propertyName != "m_LocalScale.y" )
+					&& ( binding.propertyName != "m_LocalScale.z" )
 				) continue;
 
 				// 追加
@@ -212,51 +274,143 @@ namespace logicalbeat
 				var	curve = AnimationUtility.GetEditorCurve( clip, binding );
 				curves.Add( $"{binding.path}:{binding.propertyName}", curve );
 			}
-			curveDatas = new BATCurveData[pathsTmp.Count];
 
 			// カーブデータ構築
-			for (int h = 0;h < curveDatas.Length;++h)
+			var	curveDatasTmp = new List<BATCurveData>( pathsTmp.Count );
+			for (int h = 0;h < pathsTmp.Count;++h)
 			{
+				// 格納用
+				var	curveData = new BATCurveData();
+
 				// パス名設定
-				curveDatas[h].bindPath = pathsTmp[h];
+				curveData.bindPath = pathsTmp[h];
 
 				// カーブ取得
-				AnimationCurve	curveX = null;
-				AnimationCurve	curveY = null;
-				AnimationCurve	curveZ = null;
-				AnimationCurve	curveW = null;
+				AnimationCurve	curvePositionX = null;
+				AnimationCurve	curvePositionY = null;
+				AnimationCurve	curvePositionZ = null;
+				AnimationCurve	curveRotationX = null;
+				AnimationCurve	curveRotationY = null;
+				AnimationCurve	curveRotationZ = null;
+				AnimationCurve	curveRotationW = null;
+				AnimationCurve	curveScaleX    = null;
+				AnimationCurve	curveScaleY    = null;
+				AnimationCurve	curveScaleZ    = null;
 				if ( h < pathsTmp.Count )
 				{
-					curves.TryGetValue( $"{pathsTmp[h]}:m_LocalRotation.x", out curveX );
-					curves.TryGetValue( $"{pathsTmp[h]}:m_LocalRotation.y", out curveY );
-					curves.TryGetValue( $"{pathsTmp[h]}:m_LocalRotation.z", out curveZ );
-					curves.TryGetValue( $"{pathsTmp[h]}:m_LocalRotation.w", out curveW );
+					curves.TryGetValue( $"{pathsTmp[h]}:m_LocalPosition.x", out curvePositionX );
+					curves.TryGetValue( $"{pathsTmp[h]}:m_LocalPosition.y", out curvePositionY );
+					curves.TryGetValue( $"{pathsTmp[h]}:m_LocalPosition.z", out curvePositionZ );
+
+					curves.TryGetValue( $"{pathsTmp[h]}:m_LocalRotation.x", out curveRotationX );
+					curves.TryGetValue( $"{pathsTmp[h]}:m_LocalRotation.y", out curveRotationY );
+					curves.TryGetValue( $"{pathsTmp[h]}:m_LocalRotation.z", out curveRotationZ );
+					curves.TryGetValue( $"{pathsTmp[h]}:m_LocalRotation.w", out curveRotationW );
+
+					curves.TryGetValue( $"{pathsTmp[h]}:m_LocalScale.x", out curveScaleX );
+					curves.TryGetValue( $"{pathsTmp[h]}:m_LocalScale.y", out curveScaleY );
+					curves.TryGetValue( $"{pathsTmp[h]}:m_LocalScale.z", out curveScaleZ );
 				}
 
 				// カーブ情報作成
 				int	keyNum = (int)((float)frameRate * timeLength) + 1;
-				curveDatas[h].times = new float[keyNum];
-				curveDatas[h].localRotations = new Quaternion[keyNum];
+				curveData.times = new float[keyNum];
+				var	localPositions = new List<Vector3>();
+				var	localRotations = new List<Quaternion>();
+				var	localScales    = new List<Vector3>();
 				for (int x = 0;x < keyNum;++x)
 				{
 					// 時刻算出
 					float	time = Mathf.Min( (float)x / (float)frameRate, timeLength );
-					curveDatas[h].times[x] = time;
+					curveData.times[x] = time;
 
-					// カーブ評価
-					float	valueX = 1.0f;
-					float	valueY = 1.0f;
-					float	valueZ = 1.0f;
-					float	valueW = 1.0f;
-					if ( curveX != null ) valueX = curveX.Evaluate( time );
-					if ( curveY != null ) valueY = curveY.Evaluate( time );
-					if ( curveZ != null ) valueZ = curveZ.Evaluate( time );
-					if ( curveW != null ) valueW = curveW.Evaluate( time );
+					// 座標対応
+					if ( true
+						&& ( curvePositionX != null )
+						&& ( curvePositionY != null )
+						&& ( curvePositionZ != null )
+					) {
+						// カーブ評価
+						float	valueX = curvePositionX.Evaluate( time );
+						float	valueY = curvePositionY.Evaluate( time );
+						float	valueZ = curvePositionZ.Evaluate( time );
 
-					// 回転追加
-					curveDatas[h].localRotations[x] = Quaternion.Normalize( new Quaternion( valueX, valueY, valueZ, valueW ) );
+						// 情報追加
+						localPositions.Add( new Vector3( valueX, valueY, valueZ ) );
+					}
+
+					// 回転対応
+					if ( true
+						&& ( curveRotationX != null )
+						&& ( curveRotationY != null )
+						&& ( curveRotationZ != null )
+						&& ( curveRotationW != null )
+					) {
+						// カーブ評価
+						float	valueX = valueX = curveRotationX.Evaluate( time );
+						float	valueY = valueY = curveRotationY.Evaluate( time );
+						float	valueZ = valueZ = curveRotationZ.Evaluate( time );
+						float	valueW = valueW = curveRotationW.Evaluate( time );
+
+						// 情報追加
+						localRotations.Add( Quaternion.Normalize( new Quaternion( valueX, valueY, valueZ, valueW ) ) );
+					}
+
+					// スケール対応
+					if ( true
+						&& ( curveScaleX != null )
+						&& ( curveScaleY != null )
+						&& ( curveScaleZ != null )
+					) {
+						// カーブ評価
+						float	valueX = valueX = curveScaleX.Evaluate( time );
+						float	valueY = valueY = curveScaleY.Evaluate( time );
+						float	valueZ = valueZ = curveScaleZ.Evaluate( time );
+
+						// 情報追加
+						localScales.Add( new Vector3( valueX, valueY, valueZ ) );
+					}
 				}
+
+				// カーブ情報圧縮
+				if ( localPositions.Count >= 2 )
+				{
+					// 全部同一か？
+					bool	comp = true;
+					for (int i = 1;i < localPositions.Count;++i)
+					{
+						if ( localPositions[i] != localPositions[0] ) { comp = false; break; }
+					}
+					if ( comp ) localPositions.RemoveRange( 1, localPositions.Count - 1 );
+				}
+				if ( localRotations.Count >= 2 )
+				{
+					// 全部同一か？
+					bool	comp = true;
+					for (int i = 1;i < localRotations.Count;++i)
+					{
+						if ( localRotations[i] != localRotations[0] ) { comp = false; break; }
+					}
+					if ( comp ) localRotations.RemoveRange( 1, localRotations.Count - 1 );
+				}
+				if ( localScales.Count >= 2 )
+				{
+					// 全部同一か？
+					bool	comp = true;
+					for (int i = 1;i < localScales.Count;++i)
+					{
+						if ( localScales[i] != localScales[0] ) { comp = false; break; }
+					}
+					if ( comp ) localScales.RemoveRange( 1, localScales.Count - 1 );
+				}
+				curveData.localPositions = localPositions.ToArray();
+				curveData.localRotations = localRotations.ToArray();
+				curveData.localScales    = localScales.ToArray();
+
+				// データ追加
+				curveDatasTmp.Add( curveData );
 			}
+			curveDatas = curveDatasTmp.ToArray();
 		}
 #endif
 	}
